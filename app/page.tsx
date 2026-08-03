@@ -3,16 +3,17 @@
 import { useMemo, useState } from "react";
 
 type Result = {
-  id: number;
+  id: number | string;
   title: string;
   year: number;
-  resolution: "4K" | "1080p";
+  resolution: string;
   size: string;
   languages: string[];
   codec: string;
   seeders: number;
   source: string;
   featured?: boolean;
+  magnet?: string | null;
 };
 
 const catalog: Result[] = [
@@ -30,23 +31,35 @@ export default function Home() {
   const [searched, setSearched] = useState(false);
   const [quality, setQuality] = useState<"Todos" | "4K" | "1080p">("Todos");
   const [notice, setNotice] = useState<string | null>(null);
+  const [liveResults, setLiveResults] = useState<Result[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [movieName, setMovieName] = useState("");
 
   const results = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return catalog
+    return (liveResults || catalog)
       .filter((item) => !term || item.title.toLowerCase().includes(term))
       .filter((item) => quality === "Todos" || item.resolution === quality)
       .sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)) || b.seeders - a.seeders);
-  }, [query, quality]);
+  }, [query, quality, liveResults]);
 
-  function search(value?: string) {
+  async function search(value?: string) {
+    const term = value || query;
     if (value) setQuery(value);
+    if (!term.trim()) return;
     setSearched(true);
     setNotice(null);
-  }
-
-  function openResult(item: Result) {
-    setNotice(`${item.title} · ${item.resolution}: el enlace estará disponible al conectar una fuente autorizada.`);
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/search?q=${encodeURIComponent(term)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "No se pudo buscar");
+      setLiveResults(data.streams || []);
+      setMovieName(data.movie?.name || term);
+    } catch (error) {
+      setLiveResults([]);
+      setNotice(error instanceof Error ? error.message : "No se pudo conectar con Torrentio");
+    } finally { setLoading(false); }
   }
 
   return (
@@ -76,20 +89,20 @@ export default function Home() {
 
       <section className="results-section" id="catalogo">
         <div className="section-heading">
-          <div><span className="kicker">CATÁLOGO ABIERTO</span><h2>{searched ? (query ? `Resultados para “${query}”` : "Todos los títulos") : "Listos para descubrir"}</h2></div>
+          <div><span className="kicker">RESULTADOS DE TORRENTIO</span><h2>{loading ? "Buscando fuentes…" : searched ? `Resultados para “${movieName || query}”` : "Listos para descubrir"}</h2></div>
           <div className="filters" aria-label="Filtrar por calidad">{(["Todos", "4K", "1080p"] as const).map((item) => <button className={quality === item ? "active" : ""} onClick={() => setQuality(item)} key={item}>{item}</button>)}</div>
         </div>
 
         <div className="result-list">
-          {(searched ? results : catalog.slice(0, 3)).map((item, index) => (
+          {!loading && (searched ? results : catalog.slice(0, 3)).map((item, index) => (
             <article className="result" key={item.id}>
               <div className="rank">{String(index + 1).padStart(2, "0")}</div>
               <div className="movie-info"><div className="title-row"><h3>{item.title}</h3><span>{item.year}</span></div><div className="tags"><b className={item.resolution === "4K" ? "gold" : ""}>{item.resolution}</b>{item.languages.map((lang) => <span key={lang}>{lang}</span>)}<span>{item.codec}</span></div></div>
               <div className="meta"><span>{item.size}</span><span className="seeds">▲ {item.seeders}</span><small>{item.source}</small></div>
-              <button className="torrent-button" onClick={() => openResult(item)} aria-label={`Ver fuente de ${item.title}`}>VER FUENTE <span>↗</span></button>
+              {item.magnet ? <a className="torrent-button" href={item.magnet} aria-label={`Abrir torrent de ${item.title}`}>ABRIR TORRENT <span>↗</span></a> : <button className="torrent-button" onClick={() => setNotice("Realizá una búsqueda para obtener el enlace real de Torrentio.")}>VER FUENTE <span>↗</span></button>}
             </article>
           ))}
-          {searched && results.length === 0 && <div className="empty"><span>◌</span><h3>No encontramos ese título</h3><p>Probá con otra búsqueda o revisá el catálogo completo.</p><button onClick={() => { setQuery(""); setSearched(false); }}>VER CATÁLOGO</button></div>}
+          {!loading && searched && results.length === 0 && <div className="empty"><span>◌</span><h3>No encontramos fuentes</h3><p>Probá con otro título o revisá la escritura.</p><button onClick={() => { setQuery(""); setSearched(false); setLiveResults(null); }}>VER CATÁLOGO</button></div>}
         </div>
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice(null)}>×</button></div>}
       </section>
@@ -99,7 +112,7 @@ export default function Home() {
         <div className="steps"><div><b>01</b><h3>Buscá</h3><p>Escribí el título que querés encontrar.</p></div><div><b>02</b><h3>Compará</h3><p>Ordenamos audio dual y alta resolución primero.</p></div><div><b>03</b><h3>Abrí la fuente</h3><p>Accedé al archivo desde su colección autorizada.</p></div></div>
       </section>
 
-      <footer><div className="brand"><span className="brand-mark">L</span><span>LÚMINA</span></div><p>Explorador de cine abierto y de dominio público.</p><span>Hecho para cinéfilos · 2026</span></footer>
+      <footer><div className="brand"><span className="brand-mark">L</span><span>LÚMINA</span></div><p>Uso personal y autorizado · Resultados provistos por Torrentio.</p><span>Hecho para cinéfilos · 2026</span></footer>
     </main>
   );
 }
