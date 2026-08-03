@@ -45,6 +45,7 @@ h1 em { font-family:"Playfair Display",serif; font-weight:600; color:#71736d; }
 .rank { color:#777a71; font-family:Manrope,sans-serif; font-size:13px; }.title-row { display:flex; align-items:baseline; gap:10px; }.title-row h3 { font-family:Manrope,sans-serif; font-size:21px; margin:0 0 12px; }.title-row>span { color:#75776f; font-size:12px; }
 .tags { display:flex; flex-wrap:wrap; gap:6px; }.tags span,.tags b { border:1px solid #444640; padding:5px 7px; font-size:9px; letter-spacing:.06em; text-transform:uppercase; font-weight:500; }.tags .gold { background:var(--acid); color:var(--ink); border-color:var(--acid); font-weight:700; }
 .tags .dual { background:#f1eee6; color:var(--ink); border-color:#f1eee6; font-weight:700; }
+.tags .latino { background:#55d98b;color:#102017;border-color:#55d98b;font-weight:700; }
 .meta { display:grid; grid-template-columns:1fr 1fr; gap:3px; font-size:12px; }.meta small { grid-column:1/-1; color:#777a71; }.seeds { color:#a7cb33; }
 .torrent-button { height:44px; border:1px solid #565851; background:transparent; color:white; cursor:pointer; font-size:10px; letter-spacing:.12em; font-weight:700; display:flex;align-items:center;justify-content:center;text-decoration:none; }.torrent-button span { color:var(--acid); margin-left:10px; }.torrent-button:hover { background:white; color:var(--ink); }
 .notice { margin-top:20px; background:var(--acid); color:var(--ink); padding:16px 20px; display:flex; justify-content:space-between; font-size:13px; }.notice button { border:0;background:transparent;font-size:22px;cursor:pointer; }
