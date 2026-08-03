@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Result = {
   id: number | string;
@@ -27,6 +27,7 @@ const catalog: Result[] = [
 const suggestions = ["Night of the Living Dead", "Charade", "The General"];
 
 type TorrentioStream = { name?: string; title?: string; infoHash?: string; fileIdx?: number; sources?: string[] };
+type MediaSuggestion = { id: string; name: string; type: "movie" | "series"; year?: string; poster?: string };
 
 function parseTorrentioStream(stream: TorrentioStream, index: number): Result {
   const text = `${stream.name || ""} ${stream.title || ""}`;
@@ -53,6 +54,37 @@ export default function Home() {
   const [liveResults, setLiveResults] = useState<Result[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [movieName, setMovieName] = useState("");
+  const [mediaSuggestions, setMediaSuggestions] = useState<MediaSuggestion[]>([]);
+  const [selectedMedia, setSelectedMedia] = useState<MediaSuggestion | null>(null);
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+
+  useEffect(() => {
+    const term = query.trim();
+    if (term.length < 2 || selectedMedia?.name === term) { setMediaSuggestions([]); return; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setSuggestionsLoading(true);
+      try {
+        const getCatalog = async (type: "movie" | "series") => {
+          const response = await fetch(`https://v3-cinemeta.strem.io/catalog/${type}/top/search=${encodeURIComponent(term)}.json`, { signal: controller.signal });
+          if (!response.ok) return [];
+          const data = await response.json() as { metas?: Array<{ id: string; name: string; releaseInfo?: string; poster?: string }> };
+          return (data.metas || []).slice(0, 5).map((item) => ({ id: item.id, name: item.name, type, year: item.releaseInfo, poster: item.poster }));
+        };
+        const [movies, series] = await Promise.all([getCatalog("movie"), getCatalog("series")]);
+        const normalized = term.toLocaleLowerCase();
+        setMediaSuggestions([...movies, ...series].sort((a, b) => {
+          const rank = (name: string) => name.toLocaleLowerCase() === normalized ? 2 : name.toLocaleLowerCase().startsWith(normalized) ? 1 : 0;
+          return rank(b.name) - rank(a.name);
+        }).slice(0, 8));
+        setShowAutocomplete(true);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setMediaSuggestions([]);
+      } finally { setSuggestionsLoading(false); }
+    }, 280);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query, selectedMedia]);
 
   const results = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -65,20 +97,26 @@ export default function Home() {
       });
   }, [query, quality, liveResults]);
 
-  async function search(value?: string) {
+  async function search(value?: string, chosen?: MediaSuggestion) {
     const term = value || query;
     if (value) setQuery(value);
     if (!term.trim()) return;
+    const exactSelection = chosen || (selectedMedia?.name === term ? selectedMedia : mediaSuggestions[0]);
     setSearched(true);
+    setShowAutocomplete(false);
     setNotice(null);
     setLoading(true);
     try {
-      const catalogResponse = await fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(term)}.json`);
-      if (!catalogResponse.ok) throw new Error("Cinemeta no respondió");
-      const catalogData = await catalogResponse.json() as { metas?: Array<{ id: string; name: string }> };
-      const movie = catalogData.metas?.[0];
+      let movie: MediaSuggestion | undefined = exactSelection;
+      if (!movie) {
+        const catalogResponse = await fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(term)}.json`);
+        if (!catalogResponse.ok) throw new Error("Cinemeta no respondió");
+        const catalogData = await catalogResponse.json() as { metas?: Array<{ id: string; name: string }> };
+        movie = catalogData.metas?.[0] ? { ...catalogData.metas[0], type: "movie" } : undefined;
+      }
       if (!movie) { setLiveResults([]); setMovieName(term); return; }
-      const torrentResponse = await fetch(`https://torrentio.strem.fun/limit=50/stream/movie/${movie.id}.json`);
+      const streamId = movie.type === "series" ? `${movie.id}:1:1` : movie.id;
+      const torrentResponse = await fetch(`https://torrentio.strem.fun/limit=50/stream/${movie.type}/${streamId}.json`);
       if (!torrentResponse.ok) throw new Error(`Torrentio no respondió (${torrentResponse.status})`);
       const torrentData = await torrentResponse.json() as { streams?: TorrentioStream[] };
       const parsed = (torrentData.streams || []).map(parseTorrentioStream).sort((a, b) => {
@@ -110,8 +148,16 @@ export default function Home() {
 
         <form className="search" onSubmit={(e) => { e.preventDefault(); search(); }}>
           <span className="search-icon">⌕</span>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Escribí una película..." aria-label="Buscar una película" />
+          <input value={query} onFocus={() => setShowAutocomplete(true)} onBlur={() => window.setTimeout(() => setShowAutocomplete(false), 150)} onChange={(e) => { setQuery(e.target.value); setSelectedMedia(null); }} placeholder="Escribí una película o serie..." aria-label="Buscar una película o serie" autoComplete="off" />
           <button type="submit">BUSCAR <span>→</span></button>
+          {showAutocomplete && query.trim().length >= 2 && <div className="autocomplete" role="listbox" aria-label="Títulos sugeridos">
+            {suggestionsLoading && <div className="autocomplete-status">Buscando títulos…</div>}
+            {!suggestionsLoading && mediaSuggestions.map((item) => <button type="button" className="autocomplete-item" role="option" aria-selected={selectedMedia?.id === item.id} key={`${item.type}-${item.id}`} onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(item.name); setSelectedMedia(item); setShowAutocomplete(false); search(item.name, item); }}>
+              {item.poster ? <img src={item.poster} alt="" /> : <span className="poster-placeholder">{item.name.slice(0, 1)}</span>}
+              <span><strong>{item.name}</strong><small>{item.type === "series" ? "Serie" : "Película"}{item.year ? ` · ${item.year}` : ""}</small></span><i>→</i>
+            </button>)}
+            {!suggestionsLoading && mediaSuggestions.length === 0 && <div className="autocomplete-status">No encontramos coincidencias.</div>}
+          </div>}
         </form>
 
         <div className="suggestions"><span>PROBÁ CON</span>{suggestions.map((item) => <button key={item} onClick={() => search(item)}>{item}</button>)}</div>
