@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 type Result = {
   id: number | string;
   title: string;
-  year: number;
+  year?: number;
   resolution: string;
   size: string;
   languages: string[];
