@@ -58,6 +58,9 @@ export default function Home() {
   const [selectedMedia, setSelectedMedia] = useState<MediaSuggestion | null>(null);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [bulkUrl, setBulkUrl] = useState("");
+  const [bulkStatus, setBulkStatus] = useState<string | null>(null);
+  const [bulkSending, setBulkSending] = useState(false);
 
   useEffect(() => {
     const term = query.trim();
@@ -132,6 +135,35 @@ export default function Home() {
     } finally { setLoading(false); }
   }
 
+  async function sendAllToQBittorrent(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBulkSending(true);
+    setBulkStatus(null);
+    try {
+      const response = await fetch(`/api/bulk?url=${encodeURIComponent(bulkUrl)}`);
+      if (!response.ok) {
+        const data = await response.json() as { error?: string };
+        throw new Error(data.error || "No se pudieron obtener los capítulos");
+      }
+      const magnets = (await response.text()).split(/\r?\n/).filter(Boolean);
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = "http://127.0.0.1:8080/api/v2/torrents/add";
+      form.target = "qbittorrent-bridge";
+      form.style.display = "none";
+      const urls = document.createElement("textarea");
+      urls.name = "urls";
+      urls.value = magnets.join("\n");
+      form.appendChild(urls);
+      document.body.appendChild(form);
+      form.submit();
+      form.remove();
+      setBulkStatus(`${magnets.length} capítulos enviados a qBittorrent.`);
+    } catch (error) {
+      setBulkStatus(error instanceof Error ? error.message : "No se pudo conectar con qBittorrent");
+    } finally { setBulkSending(false); }
+  }
+
   return (
     <main>
       <nav className="nav">
@@ -187,12 +219,14 @@ export default function Home() {
 
       <section className="bulk" id="descarga-serie">
         <div className="bulk-copy"><span className="kicker">DESCARGA EN LOTE</span><h2>Todos los capítulos.<br /><em>Un solo archivo.</em></h2><p>Pegá un enlace autorizado de mitorrent.mx y descargá una lista con todos los magnets de la temporada. Podés cargarla completa en tu cliente torrent.</p></div>
-        <form className="bulk-form" action="/api/bulk" method="get">
+        <form className="bulk-form" onSubmit={sendAllToQBittorrent}>
           <label htmlFor="series-url">ENLACE DE LA SERIE</label>
-          <textarea id="series-url" name="url" required placeholder="https://mitorrent.mx/series/..." />
-          <button type="submit">DESCARGAR TODOS LOS CAPÍTULOS <span>↓</span></button>
-          <small>Admite exclusivamente enlaces de mitorrent.mx. El archivo contiene un magnet por línea.</small>
+          <textarea id="series-url" name="url" value={bulkUrl} onChange={(event) => setBulkUrl(event.target.value)} required placeholder="https://mitorrent.mx/series/..." />
+          <button type="submit" disabled={bulkSending}>{bulkSending ? "ENVIANDO…" : "ENVIAR TODO A QBITTORRENT"} <span>↓</span></button>
+          <small>qBittorrent debe estar abierto con la Interfaz Web activa en el puerto 8080 y la autenticación local eludida.</small>
+          {bulkStatus && <div className="bulk-status" role="status">{bulkStatus}</div>}
         </form>
+        <iframe title="Conexión local con qBittorrent" name="qbittorrent-bridge" className="qbt-bridge" />
       </section>
 
       <section className="how" id="como-funciona">
