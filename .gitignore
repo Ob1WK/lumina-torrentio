@@ -43,6 +43,10 @@ next-env.d.ts
 /.sites-stage-*/
 /build/
 /dev.*.log
+/next-start.*.log
+/page.html
+/torrentio-config.html
+/bulk-test.txt
 /lumina-site*.tar.gz
 /db/
 /drizzle/

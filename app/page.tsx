@@ -78,7 +78,7 @@ export default function Home() {
       const catalogData = await catalogResponse.json() as { metas?: Array<{ id: string; name: string }> };
       const movie = catalogData.metas?.[0];
       if (!movie) { setLiveResults([]); setMovieName(term); return; }
-      const torrentResponse = await fetch(`https://torrentio.strem.fun/stream/movie/${movie.id}.json`);
+      const torrentResponse = await fetch(`https://torrentio.strem.fun/limit=50/stream/movie/${movie.id}.json`);
       if (!torrentResponse.ok) throw new Error(`Torrentio no respondió (${torrentResponse.status})`);
       const torrentData = await torrentResponse.json() as { streams?: TorrentioStream[] };
       const parsed = (torrentData.streams || []).map(parseTorrentioStream).sort((a, b) => {
@@ -121,7 +121,7 @@ export default function Home() {
 
       <section className="results-section" id="catalogo">
         <div className="section-heading">
-          <div><span className="kicker">RESULTADOS DE TORRENTIO</span><h2>{loading ? "Buscando fuentes…" : searched ? `Resultados para “${movieName || query}”` : "Listos para descubrir"}</h2></div>
+          <div><span className="kicker">RESULTADOS DE TORRENTIO</span><h2>{loading ? "Buscando fuentes…" : searched ? `Resultados para “${movieName || query}”` : "Listos para descubrir"}</h2>{searched && !loading && <p className="result-count">{results.length} fuentes encontradas · hasta 50 por calidad</p>}</div>
           <div className="filters" aria-label="Filtrar por calidad">{(["Todos", "4K", "1080p"] as const).map((item) => <button className={quality === item ? "active" : ""} onClick={() => setQuality(item)} key={item}>{item}</button>)}</div>
         </div>
 
@@ -137,6 +137,16 @@ export default function Home() {
           {!loading && searched && results.length === 0 && <div className="empty"><span>◌</span><h3>No encontramos fuentes</h3><p>Probá con otro título o revisá la escritura.</p><button onClick={() => { setQuery(""); setSearched(false); setLiveResults(null); }}>VER CATÁLOGO</button></div>}
         </div>
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice(null)}>×</button></div>}
+      </section>
+
+      <section className="bulk" id="descarga-serie">
+        <div className="bulk-copy"><span className="kicker">DESCARGA EN LOTE</span><h2>Todos los capítulos.<br /><em>Un solo archivo.</em></h2><p>Pegá un enlace autorizado de mitorrent.mx y descargá una lista con todos los magnets de la temporada. Podés cargarla completa en tu cliente torrent.</p></div>
+        <form className="bulk-form" action="/api/bulk" method="get">
+          <label htmlFor="series-url">ENLACE DE LA SERIE</label>
+          <textarea id="series-url" name="url" required placeholder="https://mitorrent.mx/series/..." />
+          <button type="submit">DESCARGAR TODOS LOS CAPÍTULOS <span>↓</span></button>
+          <small>Admite exclusivamente enlaces de mitorrent.mx. El archivo contiene un magnet por línea.</small>
+        </form>
       </section>
 
       <section className="how" id="como-funciona">
