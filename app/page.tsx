@@ -34,9 +34,10 @@ function parseTorrentioStream(stream: TorrentioStream, index: number): Result {
   const resolution = /\b(2160p|4k)\b/i.test(text) ? "4K" : /\b1080p\b/i.test(text) ? "1080p" : /\b720p\b/i.test(text) ? "720p" : "Otra";
   const size = text.match(/💾\s*([^⚙️\n]+)/)?.[1]?.trim() || "—";
   const seeders = Number(text.match(/👤\s*(\d+)/)?.[1] || 0);
-  const latino = /latino|lat\b|spanish lat/i.test(text);
+  const latino = /latino|latam|lat[ ._+-](?:eng|spa)|(?:eng|spa)[ ._+-]lat|spanish lat/i.test(text);
+  const dual = /dual(?:[ ._-]?audio)?|multi(?:[ ._-]?audio)?|lat(?:ino)?[ ._+/-]+(?:eng|english)|(?:eng|english)[ ._+/-]+lat(?:ino)?/i.test(text);
   const spanish = /español|spanish|castellano|dual|multi/i.test(text);
-  const english = /english|eng\b|dual|multi/i.test(text);
+  const english = /english|eng\b/i.test(text) || (dual && latino);
   const languages = [latino ? "Español latino" : spanish ? "Español" : null, english ? "English" : null].filter(Boolean) as string[];
   const codec = /hevc|x265/i.test(text) ? "HEVC" : /av1/i.test(text) ? "AV1" : /x264|h\.264/i.test(text) ? "H.264" : "Video";
   const trackers = (stream.sources || []).filter((source) => source.startsWith("tracker:")).map((source) => source.slice(8));
@@ -58,7 +59,10 @@ export default function Home() {
     return (liveResults || catalog)
       .filter((item) => !term || item.title.toLowerCase().includes(term))
       .filter((item) => quality === "Todos" || item.resolution === quality)
-      .sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)) || b.seeders - a.seeders);
+      .sort((a, b) => {
+        const score = (value: string) => value === "4K" ? 3 : value === "1080p" ? 2 : value === "720p" ? 1 : 0;
+        return Number(Boolean(b.featured)) - Number(Boolean(a.featured)) || score(b.resolution) - score(a.resolution) || b.seeders - a.seeders;
+      });
   }, [query, quality, liveResults]);
 
   async function search(value?: string) {
@@ -79,6 +83,7 @@ export default function Home() {
       const torrentData = await torrentResponse.json() as { streams?: TorrentioStream[] };
       const parsed = (torrentData.streams || []).map(parseTorrentioStream).sort((a, b) => {
         const score = (value: string) => value === "4K" ? 3 : value === "1080p" ? 2 : value === "720p" ? 1 : 0;
+        // Audio dual Latino + English siempre tiene prioridad sobre la resolución.
         return Number(Boolean(b.featured)) - Number(Boolean(a.featured)) || score(b.resolution) - score(a.resolution) || b.seeders - a.seeders;
       });
       setLiveResults(parsed);
@@ -124,7 +129,7 @@ export default function Home() {
           {!loading && (searched ? results : catalog.slice(0, 3)).map((item, index) => (
             <article className="result" key={item.id}>
               <div className="rank">{String(index + 1).padStart(2, "0")}</div>
-              <div className="movie-info"><div className="title-row"><h3>{item.title}</h3><span>{item.year}</span></div><div className="tags"><b className={item.resolution === "4K" ? "gold" : ""}>{item.resolution}</b>{item.languages.map((lang) => <span key={lang}>{lang}</span>)}<span>{item.codec}</span></div></div>
+              <div className="movie-info"><div className="title-row"><h3>{item.title}</h3><span>{item.year}</span></div><div className="tags">{item.featured && <b className="dual">DUAL LAT + ENG</b>}<b className={item.resolution === "4K" ? "gold" : ""}>{item.resolution}</b>{item.languages.map((lang) => <span key={lang}>{lang}</span>)}<span>{item.codec}</span></div></div>
               <div className="meta"><span>{item.size}</span><span className="seeds">▲ {item.seeders}</span><small>{item.source}</small></div>
               {item.magnet ? <a className="torrent-button" href={item.magnet} aria-label={`Abrir torrent de ${item.title}`}>ABRIR TORRENT <span>↗</span></a> : <button className="torrent-button" onClick={() => setNotice("Realizá una búsqueda para obtener el enlace real de Torrentio.")}>VER FUENTE <span>↗</span></button>}
             </article>

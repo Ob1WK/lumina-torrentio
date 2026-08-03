@@ -14,9 +14,10 @@ function parseStream(stream: TorrentioStream, index: number) {
   const resolution = /\b(2160p|4k)\b/i.test(text) ? "4K" : /\b1080p\b/i.test(text) ? "1080p" : /\b720p\b/i.test(text) ? "720p" : "Otra";
   const size = text.match(/💾\s*([^⚙️\n]+)/)?.[1]?.trim() || "—";
   const seeders = Number(text.match(/👤\s*(\d+)/)?.[1] || 0);
-  const latino = /latino|lat\b|spanish lat/i.test(text);
+  const latino = /latino|latam|lat[ ._+-](?:eng|spa)|(?:eng|spa)[ ._+-]lat|spanish lat/i.test(text);
+  const dual = /dual(?:[ ._-]?audio)?|multi(?:[ ._-]?audio)?|lat(?:ino)?[ ._+/-]+(?:eng|english)|(?:eng|english)[ ._+/-]+lat(?:ino)?/i.test(text);
   const spanish = /español|spanish|castellano|dual|multi/i.test(text);
-  const english = /english|eng\b|dual|multi/i.test(text);
+  const english = /english|eng\b/i.test(text) || (dual && latino);
   const languages = [latino ? "Español latino" : spanish ? "Español" : null, english ? "English" : null].filter(Boolean);
   const codec = /hevc|x265/i.test(text) ? "HEVC" : /av1/i.test(text) ? "AV1" : /x264|h\.264/i.test(text) ? "H.264" : "Video";
   const trackers = (stream.sources || []).filter((source) => source.startsWith("tracker:")).map((source) => source.slice(8));
