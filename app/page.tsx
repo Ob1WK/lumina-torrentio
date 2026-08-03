@@ -138,21 +138,17 @@ export default function Home() {
         throw new Error(data.error || "No se pudieron obtener los capítulos");
       }
       const magnets = (await response.text()).split(/\r?\n/).filter(Boolean);
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = "http://127.0.0.1:8080/api/v2/torrents/add";
-      form.target = "qbittorrent-bridge";
-      form.style.display = "none";
-      const urls = document.createElement("textarea");
-      urls.name = "urls";
-      urls.value = magnets.join("\n");
-      form.appendChild(urls);
-      document.body.appendChild(form);
-      form.submit();
-      form.remove();
-      setBulkStatus(`${magnets.length} capítulos enviados a qBittorrent.`);
+      const bridgeResponse = await fetch("http://127.0.0.1:3210/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ magnets }),
+      });
+      if (!bridgeResponse.ok) throw new Error("El puente local rechazó la importación");
+      const confirmation = await bridgeResponse.json() as { imported?: number };
+      setBulkStatus(`${confirmation.imported || magnets.length} capítulos agregados realmente a qBittorrent.`);
     } catch (error) {
-      setBulkStatus(error instanceof Error ? error.message : "No se pudo conectar con qBittorrent");
+      const message = error instanceof Error ? error.message : "";
+      setBulkStatus(message.includes("fetch") ? "No encontramos el puente local. Descargalo, ejecutalo y dejá su ventana abierta." : message || "No se pudo conectar con qBittorrent");
     } finally { setBulkSending(false); }
   }
 
@@ -214,10 +210,10 @@ export default function Home() {
           <label htmlFor="series-url">ENLACE DE LA SERIE</label>
           <textarea id="series-url" name="url" value={bulkUrl} onChange={(event) => setBulkUrl(event.target.value)} required placeholder="https://mitorrent.mx/series/..." />
           <button type="submit" disabled={bulkSending}>{bulkSending ? "ENVIANDO…" : "ENVIAR TODO A QBITTORRENT"} <span>↓</span></button>
-          <small>qBittorrent debe estar abierto con la Interfaz Web activa en el puerto 8080 y la autenticación local eludida.</small>
+          <small>qBittorrent y el puente local de Lúmina deben estar abiertos.</small>
+          <a className="bridge-download" href="/lumina-qbt-bridge.ps1" download>DESCARGAR PUENTE LOCAL</a>
           {bulkStatus && <div className="bulk-status" role="status">{bulkStatus}</div>}
         </form>
-        <iframe title="Conexión local con qBittorrent" name="qbittorrent-bridge" className="qbt-bridge" />
       </section>
 
       <section className="how" id="como-funciona">
