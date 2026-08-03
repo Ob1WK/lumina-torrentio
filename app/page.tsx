@@ -15,6 +15,7 @@ type Result = {
   featured?: boolean;
   languagePriority?: number;
   magnet?: string | null;
+  downloadUrl?: string | null;
 };
 
 const catalog: Result[] = [
@@ -113,16 +114,10 @@ export default function Home() {
         movie = catalogData.metas?.[0] ? { ...catalogData.metas[0], type: "movie" } : undefined;
       }
       if (!movie) { setLiveResults([]); setMovieName(term); return; }
-      const streamId = movie.type === "series" ? `${movie.id}:1:1` : movie.id;
-      const torrentResponse = await fetch(`https://torrentio.strem.fun/language=latino,spanish|limit=50/stream/${movie.type}/${streamId}.json`);
-      if (!torrentResponse.ok) throw new Error(`Torrentio no respondió (${torrentResponse.status})`);
-      const torrentData = await torrentResponse.json() as { streams?: TorrentioStream[] };
-      const parsed = (torrentData.streams || []).map(parseTorrentioStream).sort((a, b) => {
-        const score = (value: string) => value === "4K" ? 3 : value === "1080p" ? 2 : value === "720p" ? 1 : 0;
-        // Audio dual Latino + English siempre tiene prioridad sobre la resolución.
-        return (b.languagePriority || 0) - (a.languagePriority || 0) || score(b.resolution) - score(a.resolution) || b.seeders - a.seeders;
-      });
-      setLiveResults(parsed);
+      const response = await fetch(`/api/search?q=${encodeURIComponent(term)}&id=${encodeURIComponent(movie.id)}&type=${movie.type}`);
+      const data = await response.json() as { streams?: Result[]; error?: string };
+      if (!response.ok) throw new Error(data.error || "No se pudieron consultar las fuentes");
+      setLiveResults(data.streams || []);
       setMovieName(movie.name);
     } catch (error) {
       setLiveResults([]);
@@ -189,7 +184,7 @@ export default function Home() {
 
       <section className="results-section" id="catalogo">
         <div className="section-heading">
-          <div><span className="kicker">RESULTADOS DE TORRENTIO</span><h2>{loading ? "Buscando fuentes…" : searched ? `Resultados para “${movieName || query}”` : "Listos para descubrir"}</h2>{searched && !loading && <p className="result-count">{results.length} fuentes encontradas · hasta 50 por calidad</p>}</div>
+          <div><span className="kicker">RESULTADOS DE TORRENTIO + NOVA</span><h2>{loading ? "Buscando fuentes…" : searched ? `Resultados para “${movieName || query}”` : "Listos para descubrir"}</h2>{searched && !loading && <p className="result-count">{results.length} fuentes encontradas · torrents y MP4 directos</p>}</div>
           <div className="filters" aria-label="Filtrar por calidad">{(["Todos", "4K", "1080p"] as const).map((item) => <button className={quality === item ? "active" : ""} onClick={() => setQuality(item)} key={item}>{item}</button>)}</div>
         </div>
 
@@ -198,8 +193,8 @@ export default function Home() {
             <article className="result" key={item.id}>
               <div className="rank">{String(index + 1).padStart(2, "0")}</div>
               <div className="movie-info"><div className="title-row"><h3>{item.title}</h3><span>{item.year}</span></div><div className="tags">{item.languagePriority === 4 && <b className="dual">DUAL LAT + ENG</b>}{item.languagePriority === 3 && <b className="latino">AUDIO LATINO</b>}<b className={item.resolution === "4K" ? "gold" : ""}>{item.resolution}</b>{item.languages.map((lang) => <span key={lang}>{lang}</span>)}<span>{item.codec}</span></div></div>
-              <div className="meta"><span>{item.size}</span><span className="seeds">▲ {item.seeders}</span><small>{item.source}</small></div>
-              {item.magnet ? <a className="torrent-button" href={item.magnet} aria-label={`Abrir torrent de ${item.title}`}>ABRIR TORRENT <span>↗</span></a> : <button className="torrent-button" onClick={() => setNotice("Realizá una búsqueda para obtener el enlace real de Torrentio.")}>VER FUENTE <span>↗</span></button>}
+              <div className="meta"><span>{item.size}</span>{item.downloadUrl ? <span className="direct">● DIRECTO</span> : <span className="seeds">▲ {item.seeders}</span>}<small>{item.source}</small></div>
+              {item.downloadUrl ? <a className="torrent-button download-button" href={item.downloadUrl} download aria-label={`Descargar MP4 de ${item.title}`}>DESCARGAR MP4 <span>↓</span></a> : item.magnet ? <a className="torrent-button" href={item.magnet} aria-label={`Abrir torrent de ${item.title}`}>ABRIR TORRENT <span>↗</span></a> : <button className="torrent-button" onClick={() => setNotice("Realizá una búsqueda para obtener enlaces reales.")}>VER FUENTE <span>↗</span></button>}
             </article>
           ))}
           {!loading && searched && results.length === 0 && <div className="empty"><span>◌</span><h3>No encontramos fuentes</h3><p>Probá con otro título o revisá la escritura.</p><button onClick={() => { setQuery(""); setSearched(false); setLiveResults(null); }}>VER CATÁLOGO</button></div>}
@@ -224,7 +219,7 @@ export default function Home() {
         <div className="steps"><div><b>01</b><h3>Buscá</h3><p>Escribí el título que querés encontrar.</p></div><div><b>02</b><h3>Compará</h3><p>Ordenamos audio dual y alta resolución primero.</p></div><div><b>03</b><h3>Abrí la fuente</h3><p>Accedé al archivo desde su colección autorizada.</p></div></div>
       </section>
 
-      <footer><div className="brand"><span className="brand-mark">L</span><span>LÚMINA</span></div><p>Uso personal y autorizado · Resultados provistos por Torrentio.</p><span>Hecho para cinéfilos · 2026</span></footer>
+      <footer><div className="brand"><span className="brand-mark">L</span><span>LÚMINA</span></div><p>Uso personal y autorizado · Resultados provistos por Torrentio y Nova.</p><span>Hecho para cinéfilos · 2026</span></footer>
     </main>
   );
 }

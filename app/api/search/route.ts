@@ -1,12 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 
-type TorrentioStream = {
-  name?: string;
-  title?: string;
-  infoHash?: string;
-  fileIdx?: number;
-  sources?: string[];
+type TorrentioStream = { name?: string; title?: string; infoHash?: string; fileIdx?: number; sources?: string[] };
+type NovaSource = {
+  real_url?: string;
+  embed_url?: string;
+  url?: string;
+  host?: string;
+  server?: string;
+  provider?: string;
+  quality?: string;
+  language?: string;
+  priority?: number;
+  requires_extraction?: boolean;
+  type?: string;
 };
+type NovaPayload = { sources?: NovaSource[] };
+type CinemetaMeta = { id: string; name: string; releaseInfo?: string; year?: string; moviedb_id?: number };
+
+const NOVA_API = "https://syntorq.com/api/";
+const NOVA_DIRECT_HOSTS = new Set(["inyoutv.com", "www.inyoutv.com", "saludvdt.com", "www.saludvdt.com"]);
 
 function parseStream(stream: TorrentioStream, index: number) {
   const text = `${stream.name || ""} ${stream.title || ""}`;
@@ -24,29 +36,105 @@ function parseStream(stream: TorrentioStream, index: number) {
   const trackers = (stream.sources || []).filter((source) => source.startsWith("tracker:")).map((source) => source.slice(8));
   const magnet = stream.infoHash ? `magnet:?xt=urn:btih:${stream.infoHash}&dn=${encodeURIComponent(title)}${trackers.map((tracker) => `&tr=${encodeURIComponent(tracker)}`).join("")}` : null;
   const languagePriority = latino && (english || dual) ? 4 : latino ? 3 : spanish && (english || dual) ? 2 : spanish ? 1 : 0;
-  return { id: index, title, resolution, size, languages, codec, seeders, source: "Torrentio", featured: languagePriority === 4, languagePriority, magnet, fileIdx: stream.fileIdx };
+  return { id: `torrent-${index}`, title, resolution, size, languages, codec, seeders, source: "Torrentio", featured: languagePriority === 4, languagePriority, magnet };
+}
+
+async function getJson<T>(input: string): Promise<T> {
+  const response = await fetch(input, {
+    headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; Lumina/1.0)" },
+    signal: AbortSignal.timeout(10_000),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`La fuente respondió ${response.status}`);
+  return response.json() as Promise<T>;
+}
+
+function isLatino(value?: string) {
+  const language = String(value || "").trim().toLowerCase().replace("_", "-");
+  return /^(?:lat|latam|latino|latina|es-la|es-419)$/.test(language) || /\b(?:latino|latina|latam)\b/.test(language);
+}
+
+function novaMp4Results(payloads: NovaPayload[], title: string) {
+  const seen = new Set<string>();
+  return payloads.flatMap((payload) => payload.sources || []).flatMap((source, index) => {
+    const raw = source.real_url || source.embed_url || source.url;
+    if (!raw || seen.has(raw) || !isLatino(source.language)) return [];
+    let url: URL;
+    try { url = new URL(raw); } catch { return []; }
+    const direct = source.requires_extraction === false || source.type?.toLowerCase() === "direct" || /\.mp4(?:$|[?#])/i.test(url.href);
+    if (!direct || !/\.mp4(?:$|[?#])/i.test(url.href) || !NOVA_DIRECT_HOSTS.has(url.hostname.toLowerCase())) return [];
+    seen.add(raw);
+    const quality = source.quality || "Auto";
+    const resolution = /2160|4k/i.test(quality) ? "4K" : /1080/i.test(quality) ? "1080p" : /720|hd/i.test(quality) ? "720p" : "Otra";
+    const downloadUrl = `/api/nova/download?url=${encodeURIComponent(url.href)}&title=${encodeURIComponent(title)}`;
+    return [{
+      id: `nova-${index}-${source.priority ?? 999}`,
+      title,
+      resolution,
+      size: "MP4 directo",
+      languages: ["Español latino"],
+      codec: "MP4",
+      seeders: 0,
+      source: `Nova · ${source.host || source.server || source.provider || url.hostname}`,
+      featured: true,
+      languagePriority: 5,
+      downloadUrl,
+    }];
+  }).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+async function findNovaItem(type: "movie" | "series", meta: CinemetaMeta) {
+  const resource = type === "series" ? "series" : "movies";
+  const data = await getJson<Array<{ id: number; tmdb_id?: number; title?: string; year?: number }>>(
+    `${NOVA_API}${resource}/search?limit=50&skip=0&q=${encodeURIComponent(meta.name)}`,
+  );
+  return data.find((item) => String(item.tmdb_id || "") === String(meta.moviedb_id || "")) ||
+    data.find((item) => item.title?.localeCompare(meta.name, undefined, { sensitivity: "base" }) === 0);
+}
+
+async function getNovaStreams(type: "movie" | "series", meta: CinemetaMeta) {
+  const item = await findNovaItem(type, meta);
+  if (!item?.id) return [];
+  if (type === "movie") {
+    const detail = await getJson<NovaPayload>(`${NOVA_API}movies/${item.id}`);
+    return novaMp4Results([detail], meta.name);
+  }
+  const tmdbId = meta.moviedb_id;
+  const year = Number.parseInt(meta.year || meta.releaseInfo || "", 10);
+  const paths = [
+    tmdbId ? `${NOVA_API}vod/sources/tv/${tmdbId}/1/1?title=${encodeURIComponent(meta.name)}&year=${Number.isFinite(year) ? year : ""}&imdb_id=${encodeURIComponent(meta.id)}&is_anime=false` : null,
+    tmdbId ? `${NOVA_API}sources/tv/${tmdbId}/1/1?imdb_id=${encodeURIComponent(meta.id)}` : null,
+    `${NOVA_API}series/${item.id}/seasons/1/episodes/1/extract-sources`,
+  ].filter(Boolean) as string[];
+  const responses = await Promise.allSettled(paths.map((path) => getJson<NovaPayload>(path)));
+  return novaMp4Results(responses.flatMap((result) => result.status === "fulfilled" ? [result.value] : []), `${meta.name} S01E01`);
 }
 
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("q")?.trim();
-  if (!query) return NextResponse.json({ error: "Falta el título" }, { status: 400 });
+  const requestedId = request.nextUrl.searchParams.get("id")?.trim();
+  const type = request.nextUrl.searchParams.get("type") === "series" ? "series" : "movie";
+  if (!query && !requestedId) return NextResponse.json({ error: "Falta el título" }, { status: 400 });
 
   try {
-    const catalogUrl = `https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(query)}.json`;
-    const catalogResponse = await fetch(catalogUrl, { headers: { Accept: "application/json" } });
-    if (!catalogResponse.ok) throw new Error("Cinemeta no respondió");
-    const catalog = await catalogResponse.json() as { metas?: Array<{ id: string; name: string; releaseInfo?: string }> };
-    const movie = catalog.metas?.[0];
-    if (!movie) return NextResponse.json({ movie: null, streams: [] });
+    let meta: CinemetaMeta | undefined;
+    if (requestedId) {
+      const data = await getJson<{ meta?: CinemetaMeta }>(`https://v3-cinemeta.strem.io/meta/${type}/${encodeURIComponent(requestedId)}.json`);
+      meta = data.meta;
+    } else {
+      const data = await getJson<{ metas?: CinemetaMeta[] }>(`https://v3-cinemeta.strem.io/catalog/${type}/top/search=${encodeURIComponent(query || "")}.json`);
+      meta = data.metas?.[0];
+    }
+    if (!meta) return NextResponse.json({ movie: null, streams: [] });
 
-    const torrentResponse = await fetch(`https://torrentio.strem.fun/stream/movie/${movie.id}.json`, { headers: { Accept: "application/json" } });
-    if (!torrentResponse.ok) throw new Error("Torrentio no respondió");
-    const torrents = await torrentResponse.json() as { streams?: TorrentioStream[] };
-    const streams = (torrents.streams || []).map(parseStream).sort((a, b) => {
-      const quality = (value: string) => value === "4K" ? 3 : value === "1080p" ? 2 : value === "720p" ? 1 : 0;
-      return b.languagePriority - a.languagePriority || quality(b.resolution) - quality(a.resolution) || b.seeders - a.seeders;
-    });
-    return NextResponse.json({ movie, streams });
+    const streamId = type === "series" ? `${meta.id}:1:1` : meta.id;
+    const [torrentResult, novaResult] = await Promise.allSettled([
+      getJson<{ streams?: TorrentioStream[] }>(`https://torrentio.strem.fun/language=latino,spanish|limit=50/stream/${type}/${streamId}.json`),
+      getNovaStreams(type, meta),
+    ]);
+    const torrents = torrentResult.status === "fulfilled" ? (torrentResult.value.streams || []).map(parseStream) : [];
+    const nova = novaResult.status === "fulfilled" ? novaResult.value : [];
+    return NextResponse.json({ movie: meta, streams: [...nova, ...torrents] });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Error inesperado" }, { status: 502 });
   }
