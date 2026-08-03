@@ -69,18 +69,10 @@ export default function Home() {
     const timer = window.setTimeout(async () => {
       setSuggestionsLoading(true);
       try {
-        const getCatalog = async (type: "movie" | "series") => {
-          const response = await fetch(`https://v3-cinemeta.strem.io/catalog/${type}/top/search=${encodeURIComponent(term)}.json`, { signal: controller.signal });
-          if (!response.ok) return [];
-          const data = await response.json() as { metas?: Array<{ id: string; name: string; releaseInfo?: string; poster?: string }> };
-          return (data.metas || []).slice(0, 5).map((item) => ({ id: item.id, name: item.name, type, year: item.releaseInfo, poster: item.poster }));
-        };
-        const [movies, series] = await Promise.all([getCatalog("movie"), getCatalog("series")]);
-        const normalized = term.toLocaleLowerCase();
-        setMediaSuggestions([...movies, ...series].sort((a, b) => {
-          const rank = (name: string) => name.toLocaleLowerCase() === normalized ? 2 : name.toLocaleLowerCase().startsWith(normalized) ? 1 : 0;
-          return rank(b.name) - rank(a.name);
-        }).slice(0, 8));
+        const response = await fetch(`/api/suggest?q=${encodeURIComponent(term)}`, { signal: controller.signal });
+        if (!response.ok) throw new Error("No se pudieron cargar las sugerencias");
+        const data = await response.json() as { suggestions?: MediaSuggestion[] };
+        setMediaSuggestions(data.suggestions || []);
         setShowAutocomplete(true);
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) setMediaSuggestions([]);
@@ -182,17 +174,16 @@ export default function Home() {
           <span className="search-icon">⌕</span>
           <input value={query} onFocus={() => setShowAutocomplete(true)} onBlur={() => window.setTimeout(() => setShowAutocomplete(false), 150)} onChange={(e) => { setQuery(e.target.value); setSelectedMedia(null); }} placeholder="Escribí una película o serie..." aria-label="Buscar una película o serie" autoComplete="off" />
           <button type="submit">BUSCAR <span>→</span></button>
-          {showAutocomplete && query.trim().length >= 2 && <div className="autocomplete" role="listbox" aria-label="Títulos sugeridos">
+          {showAutocomplete && query.trim().length >= 2 && (suggestionsLoading || mediaSuggestions.length > 0) && <div className="autocomplete" role="listbox" aria-label="Títulos sugeridos">
             {suggestionsLoading && <div className="autocomplete-status">Buscando títulos…</div>}
             {!suggestionsLoading && mediaSuggestions.map((item) => <button type="button" className="autocomplete-item" role="option" aria-selected={selectedMedia?.id === item.id} key={`${item.type}-${item.id}`} onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(item.name); setSelectedMedia(item); setShowAutocomplete(false); search(item.name, item); }}>
               {item.poster ? <img src={item.poster} alt="" /> : <span className="poster-placeholder">{item.name.slice(0, 1)}</span>}
               <span><strong>{item.name}</strong><small>{item.type === "series" ? "Serie" : "Película"}{item.year ? ` · ${item.year}` : ""}</small></span><i>→</i>
             </button>)}
-            {!suggestionsLoading && mediaSuggestions.length === 0 && <div className="autocomplete-status">No encontramos coincidencias.</div>}
           </div>}
         </form>
 
-        <div className="suggestions"><span>PROBÁ CON</span>{suggestions.map((item) => <button key={item} onClick={() => search(item)}>{item}</button>)}</div>
+        {(!showAutocomplete || query.trim().length < 2) && <div className="suggestions"><span>PROBÁ CON</span>{suggestions.map((item) => <button key={item} onClick={() => search(item)}>{item}</button>)}</div>}
 
         <div className="proof"><div className="avatars"><i>4K</i><i>ES</i><i>EN</i></div><p><strong>Selección inteligente</strong><br />Mejor calidad primero, siempre.</p></div>
       </section>
