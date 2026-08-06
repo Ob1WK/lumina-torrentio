@@ -46,8 +46,9 @@ function parseTorrentioStream(stream: TorrentioStream, index: number): Result {
   const codec = /hevc|x265/i.test(text) ? "HEVC" : /av1/i.test(text) ? "AV1" : /x264|h\.264/i.test(text) ? "H.264" : "Video";
   const trackers = (stream.sources || []).filter((source) => source.startsWith("tracker:")).map((source) => source.slice(8));
   const magnet = stream.infoHash ? `magnet:?xt=urn:btih:${stream.infoHash}&dn=${encodeURIComponent(title)}${trackers.map((tracker) => `&tr=${encodeURIComponent(tracker)}`).join("")}` : null;
-  const languagePriority = latino && (english || dual) ? 4 : latino ? 3 : spanish && (english || dual) ? 2 : spanish ? 1 : 0;
-  return { id: index, title, resolution, size, languages, codec, seeders, source: "Torrentio", featured: languagePriority === 4, languagePriority, magnet };
+  const dualLatinoEnglish = latino && english;
+  const languagePriority = dualLatinoEnglish ? 5 : latino && dual ? 4 : latino ? 3 : spanish && english ? 2 : english ? 1 : spanish ? 0 : -1;
+  return { id: index, title, resolution, size, languages, codec, seeders, source: "Torrentio", featured: dualLatinoEnglish, languagePriority, magnet };
 }
 
 export default function Home() {
@@ -92,7 +93,7 @@ export default function Home() {
       .filter((item) => quality === "Todos" || item.resolution === quality)
       .sort((a, b) => {
         const score = (value: string) => value === "4K" ? 3 : value === "1080p" ? 2 : value === "720p" ? 1 : 0;
-        return (b.languagePriority || 0) - (a.languagePriority || 0) || score(b.resolution) - score(a.resolution) || b.seeders - a.seeders;
+        return (b.languagePriority ?? -1) - (a.languagePriority ?? -1) || b.seeders - a.seeders || score(b.resolution) - score(a.resolution);
       });
   }, [query, quality, liveResults]);
 
@@ -192,7 +193,7 @@ export default function Home() {
           {!loading && (searched ? results : catalog.slice(0, 3)).map((item, index) => (
             <article className="result" key={item.id}>
               <div className="rank">{String(index + 1).padStart(2, "0")}</div>
-              <div className="movie-info"><div className="title-row"><h3>{item.title}</h3><span>{item.year}</span></div><div className="tags">{item.languagePriority === 4 && <b className="dual">DUAL LAT + ENG</b>}{item.languagePriority === 3 && <b className="latino">AUDIO LATINO</b>}<b className={item.resolution === "4K" ? "gold" : ""}>{item.resolution}</b>{item.languages.map((lang) => <span key={lang}>{lang}</span>)}<span>{item.codec}</span></div></div>
+              <div className="movie-info"><div className="title-row"><h3>{item.title}</h3><span>{item.year}</span></div><div className="tags">{item.languagePriority === 5 && item.languages.includes("English") && <b className="dual">DUAL LAT + ENG</b>}{item.languagePriority === 4 && <b className="dual">DUAL LATINO</b>}{item.languagePriority === 3 && <b className="latino">AUDIO LATINO</b>}<b className={item.resolution === "4K" ? "gold" : ""}>{item.resolution}</b>{item.languages.map((lang) => <span key={lang}>{lang}</span>)}<span>{item.codec}</span></div></div>
               <div className="meta"><span>{item.size}</span>{item.downloadUrl ? <span className="direct">● DIRECTO</span> : <span className="seeds">▲ {item.seeders}</span>}<small>{item.source}</small></div>
               {item.downloadUrl ? <a className="torrent-button download-button" href={item.downloadUrl} download aria-label={`Descargar MP4 de ${item.title}`}>DESCARGAR MP4 <span>↓</span></a> : item.magnet ? <a className="torrent-button" href={item.magnet} aria-label={`Abrir torrent de ${item.title}`}>ABRIR TORRENT <span>↗</span></a> : <button className="torrent-button" onClick={() => setNotice("Realizá una búsqueda para obtener enlaces reales.")}>VER FUENTE <span>↗</span></button>}
             </article>

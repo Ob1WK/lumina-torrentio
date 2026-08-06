@@ -35,8 +35,9 @@ function parseStream(stream: TorrentioStream, index: number) {
   const codec = /hevc|x265/i.test(text) ? "HEVC" : /av1/i.test(text) ? "AV1" : /x264|h\.264/i.test(text) ? "H.264" : "Video";
   const trackers = (stream.sources || []).filter((source) => source.startsWith("tracker:")).map((source) => source.slice(8));
   const magnet = stream.infoHash ? `magnet:?xt=urn:btih:${stream.infoHash}&dn=${encodeURIComponent(title)}${trackers.map((tracker) => `&tr=${encodeURIComponent(tracker)}`).join("")}` : null;
-  const languagePriority = latino && (english || dual) ? 4 : latino ? 3 : spanish && (english || dual) ? 2 : spanish ? 1 : 0;
-  return { id: `torrent-${index}`, title, resolution, size, languages, codec, seeders, source: "Torrentio", featured: languagePriority === 4, languagePriority, magnet };
+  const dualLatinoEnglish = latino && english;
+  const languagePriority = dualLatinoEnglish ? 5 : latino && dual ? 4 : latino ? 3 : spanish && english ? 2 : english ? 1 : spanish ? 0 : -1;
+  return { id: `torrent-${index}`, title, resolution, size, languages, codec, seeders, source: "Torrentio", featured: dualLatinoEnglish, languagePriority, magnet };
 }
 
 async function getJson<T>(input: string): Promise<T> {
