@@ -93,7 +93,8 @@ export default function Home() {
       .filter((item) => quality === "Todos" || item.resolution === quality)
       .sort((a, b) => {
         const score = (value: string) => value === "4K" ? 3 : value === "1080p" ? 2 : value === "720p" ? 1 : 0;
-        return (b.languagePriority ?? -1) - (a.languagePriority ?? -1) || b.seeders - a.seeders || score(b.resolution) - score(a.resolution);
+        const available = (item: Result) => Number(Boolean(item.downloadUrl || item.seeders > 0));
+        return available(b) - available(a) || (b.languagePriority ?? -1) - (a.languagePriority ?? -1) || b.seeders - a.seeders || score(b.resolution) - score(a.resolution);
       });
   }, [query, quality, liveResults]);
 
