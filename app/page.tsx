@@ -37,10 +37,10 @@ function parseTorrentioStream(stream: TorrentioStream, index: number): Result {
   const resolution = /\b(2160p|4k)\b/i.test(text) ? "4K" : /\b1080p\b/i.test(text) ? "1080p" : /\b720p\b/i.test(text) ? "720p" : "Otra";
   const size = text.match(/💾\s*([^⚙️\n]+)/)?.[1]?.trim() || "—";
   const seeders = Number(text.match(/👤\s*(\d+)/)?.[1] || 0);
-  const latino = /🇲🇽|🇦🇷|🇨🇴|latino|latam|lat[ ._+-](?:eng|spa)|(?:eng|spa)[ ._+-]lat|spanish lat/i.test(text);
-  const spanish = /🇪🇸|español|spanish|castellano/i.test(text);
-  const english = /🇬🇧|🇺🇸|english|eng\b/i.test(text);
-  const languageFlags = text.match(/[🇲🇽🇦🇷🇨🇴🇪🇸🇬🇧🇺🇸🇫🇷🇵🇹🇵🇱]/gu)?.length || 0;
+  const latino = /\u{1F1F2}\u{1F1FD}|\u{1F1E6}\u{1F1F7}|\u{1F1E8}\u{1F1F4}|latino|latam|lat[ ._+-](?:eng|spa)|(?:eng|spa)[ ._+-]lat|spanish lat/iu.test(text);
+  const spanish = /\u{1F1EA}\u{1F1F8}|espa(?:ñ|n)ol|spanish|castellano/iu.test(text);
+  const english = /\u{1F1EC}\u{1F1E7}|\u{1F1FA}\u{1F1F8}|english|eng\b/iu.test(text);
+  const languageFlags = text.match(/(?:\u{1F1F2}\u{1F1FD}|\u{1F1E6}\u{1F1F7}|\u{1F1E8}\u{1F1F4}|\u{1F1EA}\u{1F1F8}|\u{1F1EC}\u{1F1E7}|\u{1F1FA}\u{1F1F8}|\u{1F1EB}\u{1F1F7}|\u{1F1F5}\u{1F1F9}|\u{1F1F5}\u{1F1F1})/gu)?.length || 0;
   const dual = /dual(?:[ ._-]?audio)?|multi(?:[ ._-]?audio)?|multi\b/i.test(text) || languageFlags > 1;
   const languages = [latino ? "Español latino" : spanish ? "Español" : null, english ? "English" : null].filter(Boolean) as string[];
   const codec = /hevc|x265/i.test(text) ? "HEVC" : /av1/i.test(text) ? "AV1" : /x264|h\.264/i.test(text) ? "H.264" : "Video";
